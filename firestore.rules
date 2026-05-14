@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- ENTITY VALIDATIONS ---
+
+    function isValidRoom(data) {
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('capacity' in data) || data.capacity is int) &&
+             (!('equipment' in data) || data.equipment is list);
+    }
+
+    function isValidReservation(data) {
+      return data.keys().hasAll(['roomId', 'subject', 'startTime', 'endTime', 'organizerId', 'organizerName']) &&
+             isValidId(data.roomId) &&
+             data.subject is string && data.subject.size() > 0 && data.subject.size() <= 200 &&
+             data.startTime is string && data.endTime is string &&
+             data.startTime < data.endTime &&
+             data.organizerId == request.auth.uid &&
+             data.organizerName is string &&
+             (!('participants' in data) || data.participants is list) &&
+             (!('createdAt' in data) || data.createdAt is string) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    // --- COLLECTION RULES ---
+
+    match /rooms/{roomId} {
+      // Anyone signed in can view rooms
+      allow read: if isSignedIn();
+      // Only system/admins can modify rooms usually, but for this demo let's allow room creation if verified
+      allow create: if isVerified() && isValidRoom(incoming());
+      allow update, delete: if false; // Rooms are static for now
+    }
+
+    match /reservations/{reservationId} {
+      // List rules: enforce query security
+      allow list: if isSignedIn(); // Can be refined to only show upcoming or specific rooms
+      allow get: if isSignedIn();
+
+      allow create: if isVerified() &&
+                    isValidReservation(incoming()) &&
+                    exists(/databases/$(database)/documents/rooms/$(incoming().roomId));
+
+      allow update: if isVerified() &&
+                    isOwner(existing().organizerId) &&
+                    isValidReservation(incoming()) &&
+                    incoming().organizerId == existing().organizerId &&
+                    incoming().roomId == existing().roomId &&
+                    // Action based update: can change subject, time, participants
+                    incoming().diff(existing()).affectedKeys().hasOnly(['subject', 'startTime', 'endTime', 'participants', 'updatedAt']);
+
+      allow delete: if isVerified() && isOwner(existing().organizerId);
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "entities": {
+    "Room": {
+      "title": "Meeting Room",
+      "description": "A physical meeting room available for booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "capacity": { "type": "integer" },
+        "equipment": { "type": "array" }
+      },
+      "required": ["name"]
+    },
+    "Reservation": {
+      "title": "Meeting Reservation",
+      "description": "A booking for a meeting room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "roomId": { "type": "string" },
+        "subject": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "organizerId": { "type": "string" },
+        "organizerName": { "type": "string" },
+        "organizerEmail": { "type": "string" },
+        "participants": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["roomId", "subject", "startTime", "endTime", "organizerId", "organizerName"]
+    }
+  },
+  "firestore": {
+    "rooms": {
+      "schema": "Room",
+      "description": "List of available meeting rooms"
+    },
+    "reservations": {
+      "schema": "Reservation",
+      "description": "All room reservations"
+    }
+  }
+}

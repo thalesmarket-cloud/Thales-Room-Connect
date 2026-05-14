@@ -1,0 +1,6 @@
+{
+  "name": "Thalès Room Connect - Cloud Edition",
+  "description": "Application de réservation de salles de réunion synchronisée en temps réel pour Thalès Informatique.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
