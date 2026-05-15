@@ -39,7 +39,19 @@ import { handleFirestoreError } from './utils';
 
 // --- Components ---
 
-const Sidebar = ({ user, activeTab, setActiveTab }: { user: User | null, activeTab: 'all' | 'mine' | 'admin', setActiveTab: (t: 'all' | 'mine' | 'admin') => void }) => {
+const Sidebar = ({ 
+  user, 
+  activeTab, 
+  setActiveTab,
+  reservations,
+  currentEmployee
+}: { 
+  user: User | null; 
+  activeTab: 'all' | 'mine' | 'admin'; 
+  setActiveTab: (t: 'all' | 'mine' | 'admin') => void;
+  reservations: Reservation[];
+  currentEmployee: Employee | null;
+}) => {
   const isAdmin = user?.email === "thales.market@gmail.com";
   const handleLogin = async () => {
     try {
@@ -80,10 +92,20 @@ const Sidebar = ({ user, activeTab, setActiveTab }: { user: User | null, activeT
           <button 
             onClick={() => user && setActiveTab('mine')}
             disabled={!user}
-            className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors w-full text-left ${activeTab === 'mine' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'} disabled:opacity-20`}
+            className={`flex items-center justify-between px-4 py-3 rounded-md transition-colors w-full text-left ${activeTab === 'mine' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'} disabled:opacity-20`}
           >
-            <CheckCircle2 className="w-5 h-5 opacity-70" />
-            Mes Réservations
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="w-5 h-5 opacity-70" />
+              Mes Réservations
+            </div>
+            {user && currentEmployee && (
+              <span className="bg-blue-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full animate-in fade-in zoom-in duration-300">
+                {reservations.filter(r => {
+                  const fullName = `${currentEmployee.firstName} ${currentEmployee.lastName}`.trim().toLowerCase();
+                  return r.organizerId === user.uid || r.participants.some(p => p.trim().toLowerCase() === fullName);
+                }).length}
+              </span>
+            )}
           </button>
           
           {isAdmin && (
@@ -456,6 +478,134 @@ const ReservationModal = ({
   );
 };
 
+const RegistrationModal = ({ 
+  isOpen, 
+  user,
+  onComplete
+}: { 
+  isOpen: boolean; 
+  user: User | null;
+  onComplete: (emp: Employee) => void;
+}) => {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [position, setPosition] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (user && isOpen) {
+      const names = user.displayName?.split(' ') || [];
+      setFirstName(names[0] || "");
+      setLastName(names.slice(1).join(' ') || "");
+      setEmail(user.email || "");
+      setPosition("Collaborateur Thales");
+    }
+  }, [user, isOpen]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setLoading(true);
+    try {
+      const newEmp = {
+        firstName,
+        lastName,
+        email,
+        position,
+        userId: user.uid,
+        registeredAt: new Date().toISOString()
+      };
+      const docRef = await addDoc(collection(db, "employees"), newEmp);
+      onComplete({ id: docRef.id, ...newEmp } as Employee);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, "employees");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-[#001D40]/60 backdrop-blur-md"
+          />
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden"
+          >
+            <div className="bg-[#001D40] p-8 text-white text-center">
+              <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white/10">
+                <Users size={32} />
+              </div>
+              <h3 className="text-xl font-black">Finaliser votre Profil</h3>
+              <p className="text-sm text-white/60 mt-2">Bienvenue chez Thalès Room Connect. Merci de compléter vos informations professionnelles.</p>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="p-8 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Prénom</label>
+                  <input 
+                    required
+                    value={firstName}
+                    onChange={e => setFirstName(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nom</label>
+                  <input 
+                    required
+                    value={lastName}
+                    onChange={e => setLastName(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Email Professionnel (Outlook...)</label>
+                <input 
+                  required
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="votre.nom@thalesgroup.com"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Fonction ou poste occupé</label>
+                <input 
+                  required
+                  value={position}
+                  onChange={e => setPosition(e.target.value)}
+                  placeholder="Ex: Ingénieur Système"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium bg-white"
+                />
+              </div>
+              <button 
+                type="submit"
+                disabled={loading}
+                className="w-full bg-[#001D40] text-white py-3 rounded-lg font-bold hover:bg-blue-900 transition-all shadow-xl shadow-blue-900/20 disabled:bg-slate-300 mt-4"
+              >
+                {loading ? "Création du profil..." : "Commencer à utiliser Connect"}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
 const InvitationBanner = ({ 
   invitations, 
   onViewAll 
@@ -472,28 +622,41 @@ const InvitationBanner = ({
     return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
   };
 
+  const isOngoing = new Date(nextMeeting.startTime) <= new Date() && new Date(nextMeeting.endTime) >= new Date();
+
   return (
     <motion.div 
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: 'auto', opacity: 1 }}
-      className="bg-blue-600 text-white overflow-hidden shrink-0 border-b border-blue-700 shadow-xl relative z-20"
+      initial={{ height: 0, opacity: 0, y: -20 }}
+      animate={{ height: 'auto', opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 300, damping: 20 }}
+      className={`${isOngoing ? 'bg-orange-600' : 'bg-blue-600'} text-white overflow-hidden shrink-0 border-b border-black/10 shadow-xl relative z-[60]`}
     >
-      <div className="max-w-7xl mx-auto px-8 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
-            <AlertCircle className="text-white" size={24} />
+      <div className="max-w-7xl mx-auto px-8 py-3.5 flex items-center justify-between gap-6">
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <div className={`w-12 h-12 ${isOngoing ? 'bg-orange-400' : 'bg-blue-400'} bg-opacity-30 rounded-full flex items-center justify-center relative`}>
+            <div className="absolute inset-0 rounded-full bg-inherit animate-ping opacity-25" />
+            <div className="absolute inset-2 rounded-full bg-inherit animate-pulse opacity-40" />
+            <AlertCircle className="text-white relative z-10" size={24} />
           </div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-blue-100">Nouvelle Invitation</p>
-            <h4 className="text-sm font-bold truncate">
-              {nextMeeting.subject} &mdash; <span className="font-normal opacity-80">{nextMeeting.organizerName} vous a invité(e) le {formatDate(nextMeeting.startTime)} à {formatTime(nextMeeting.startTime)}</span>
+          <div className="truncate">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest ${isOngoing ? 'bg-white text-orange-600' : 'bg-white text-blue-600'}`}>
+                {isOngoing ? "En cours" : "Nouvelle Invitation"}
+              </span>
+              <span className="text-[10px] font-bold text-white/70 uppercase tracking-tighter">Réunion prévue</span>
+            </div>
+            <h4 className="text-base font-black truncate leading-tight">
+              {nextMeeting.subject}
             </h4>
+            <p className="text-xs text-white/80 font-medium truncate italic">
+               {nextMeeting.organizerName} vous a invité(e) le {formatDate(nextMeeting.startTime)} à {formatTime(nextMeeting.startTime)}
+            </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <button 
             onClick={onViewAll}
-            className="px-4 py-1.5 bg-white text-blue-700 rounded text-[10px] font-black uppercase hover:bg-blue-50 transition-colors shadow-lg"
+            className="px-6 py-2 bg-white text-blue-900 rounded-lg text-[11px] font-black uppercase hover:bg-blue-50 transition-all shadow-lg active:scale-95"
           >
             Voir mes réunions
           </button>
@@ -679,6 +842,7 @@ export default function App() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRegistrationModalOpen, setIsRegistrationModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'mine' | 'admin'>('all');
   const [now, setNow] = useState(new Date());
   const [isCheckingRegistration, setIsCheckingRegistration] = useState(false);
@@ -688,9 +852,13 @@ export default function App() {
 
   const userInvitations = useMemo(() => {
     if (!user || !currentEmployee) return [];
-    const fullName = `${currentEmployee.firstName} ${currentEmployee.lastName}`;
+    const fullName = `${currentEmployee.firstName} ${currentEmployee.lastName}`.trim().toLowerCase();
     return reservations
-      .filter(r => r.participants.includes(fullName) && new Date(r.startTime) > now)
+      .filter(r => {
+        const isParticipant = r.participants.some(p => p.trim().toLowerCase() === fullName);
+        const isFutureOrOngoing = new Date(r.endTime) > now;
+        return isParticipant && isFutureOrOngoing;
+      })
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   }, [reservations, user, currentEmployee, now]);
 
@@ -702,52 +870,46 @@ export default function App() {
       
       if (u) {
         setIsCheckingRegistration(true);
+        console.log("Checking registration for:", u.email);
         // Check by userId first to find existing profiles regardless of email changes
         const qByUid = query(collection(db, "employees"), where("userId", "==", u.uid));
         
-        // We'll use a one-time check for speed and then decide if we need a listener or auto-creation
-        const checkRegistration = async () => {
-          try {
-            // First check by UID
-            const { getDocs } = await import('firebase/firestore');
-            const snapByUid = await getDocs(qByUid);
+        try {
+          const { getDocs } = await import('firebase/firestore');
+          const snapByUid = await getDocs(qByUid);
+          
+          if (snapByUid.empty) {
+            console.log("No profile found by UID, checking email...");
+            // Also check by email for backwards compatibility
+            const qByEmail = query(collection(db, "employees"), where("email", "==", u.email));
+            const snapByEmail = await getDocs(qByEmail);
             
-            if (snapByUid.empty) {
-              // Also check by email for backwards compatibility with records created before userId field
-              const qByEmail = query(collection(db, "employees"), where("email", "==", u.email));
-              const snapByEmail = await getDocs(qByEmail);
-              
-              if (snapByEmail.empty) {
-                // AUTO-REGISTRATION: Create profile automatically if not found
-                const names = u.displayName?.split(' ') || [];
-                const newEmp = {
-                  firstName: names[0] || "Prénom",
-                  lastName: names.slice(1).join(' ') || u.email?.split('@')[0] || "Nom",
-                  email: u.email || "",
-                  position: "Collaborateur Thales",
-                  userId: u.uid,
-                  registeredAt: new Date().toISOString()
-                };
-                await addDoc(collection(db, "employees"), newEmp);
-                setCurrentEmployee(newEmp as Employee);
-                console.log("Auto-registration complete for:", u.email);
-              } else {
-                // Update existing record with userId if it was missing
-                const docId = snapByEmail.docs[0].id;
-                await updateDoc(doc(db, "employees", docId), { userId: u.uid });
-                setCurrentEmployee({ id: docId, ...snapByEmail.docs[0].data(), userId: u.uid } as Employee);
-              }
+            if (snapByEmail.empty) {
+              console.log("Totally new user. Showing registration modal.");
+              setIsRegistrationModalOpen(true);
+              setCurrentEmployee(null);
             } else {
-              setCurrentEmployee({ id: snapByUid.docs[0].id, ...snapByUid.docs[0].data() } as Employee);
+              console.log("Found profile by email. Updating UID.");
+              const docId = snapByEmail.docs[0].id;
+              const data = snapByEmail.docs[0].data();
+              await updateDoc(doc(db, "employees", docId), { userId: u.uid });
+              setCurrentEmployee({ id: docId, ...data, userId: u.uid } as Employee);
+              setIsRegistrationModalOpen(false);
             }
-          } catch (err) {
-            console.error("Auto-registration failed:", err);
-          } finally {
-            setIsCheckingRegistration(false);
+          } else {
+            console.log("Profile found by UID.");
+            setCurrentEmployee({ id: snapByUid.docs[0].id, ...snapByUid.docs[0].data() } as Employee);
+            setIsRegistrationModalOpen(false);
           }
-        };
-
-        checkRegistration();
+        } catch (err) {
+          console.error("Auto-registration check failed:", err);
+        } finally {
+          setIsCheckingRegistration(false);
+        }
+      } else {
+        setCurrentEmployee(null);
+        setIsRegistrationModalOpen(false);
+        setIsCheckingRegistration(false);
       }
     });
 
@@ -811,9 +973,10 @@ export default function App() {
 
   const filteredReservations = useMemo(() => {
     if (activeTab === 'mine' && user && currentEmployee) {
-      const fullName = `${currentEmployee.firstName} ${currentEmployee.lastName}`;
+      const fullName = `${currentEmployee.firstName} ${currentEmployee.lastName}`.trim().toLowerCase();
       return reservations.filter(r => 
-        r.organizerId === user.uid || r.participants.includes(fullName)
+        r.organizerId === user.uid || 
+        r.participants.some(p => p.trim().toLowerCase() === fullName)
       );
     }
     return reservations;
@@ -832,17 +995,23 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-800 font-sans overflow-hidden">
-      <Sidebar user={user} activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar 
+        user={user} 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab}
+        reservations={reservations}
+        currentEmployee={currentEmployee}
+      />
       
       <main className="flex-1 flex flex-col overflow-hidden">
+        <InvitationBanner 
+          invitations={userInvitations} 
+          onViewAll={() => setActiveTab('mine')} 
+        />
         {activeTab === 'admin' ? (
           <AdminDashboard />
         ) : (
           <>
-            <InvitationBanner 
-              invitations={userInvitations} 
-              onViewAll={() => setActiveTab('mine')} 
-            />
             {/* Header Bar */}
             <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
               <div className="flex items-center gap-4">
@@ -910,7 +1079,7 @@ export default function App() {
                               dayReservations.map(res => {
                                 const isNow = new Date() >= new Date(res.startTime) && new Date() <= new Date(res.endTime);
                                 const formatTime = (iso: string) => iso.split('T')[1].substring(0, 5);
-                                const isInvited = currentEmployee && res.participants.includes(`${currentEmployee.firstName} ${currentEmployee.lastName}`);
+                                const isInvited = currentEmployee && res.participants.some(p => p.trim().toLowerCase() === `${currentEmployee.firstName} ${currentEmployee.lastName}`.trim().toLowerCase());
 
                                 return (
                                   <motion.div 
@@ -967,6 +1136,15 @@ export default function App() {
         onClose={() => setIsModalOpen(false)} 
         room={selectedRoom}
         user={user}
+      />
+
+      <RegistrationModal 
+        isOpen={isRegistrationModalOpen}
+        user={user}
+        onComplete={(emp) => {
+          setCurrentEmployee(emp);
+          setIsRegistrationModalOpen(false);
+        }}
       />
     </div>
   );
