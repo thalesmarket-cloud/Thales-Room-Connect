@@ -24,15 +24,9 @@ export interface Employee {
   firstName: string;
   lastName: string;
   email: string;
-  department?: string;
-}
-
-export interface Employee {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string;
-  department?: string;
+  position?: string;
+  userId?: string;
+  registeredAt?: string;
 }
 
 export enum OperationType {

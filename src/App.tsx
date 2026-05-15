@@ -391,7 +391,7 @@ const ReservationModal = ({
                                   >
                                     <div className="flex flex-col">
                                       <span className="text-sm">{name}</span>
-                                      <span className="text-[9px] opacity-60 font-normal">{emp.department || "Général"}</span>
+                                      <span className="text-[9px] opacity-60 font-normal">{emp.position || "Membre Thales"}</span>
                                     </div>
                                     {isSelected ? <CheckCircle2 size={16} className="text-blue-600" /> : <div className="w-4 h-4 rounded-full border border-slate-200" />}
                                   </div>
@@ -430,12 +430,138 @@ const ReservationModal = ({
   );
 };
 
+const RegistrationModal = ({ 
+  isOpen, 
+  user,
+  onComplete
+}: { 
+  isOpen: boolean; 
+  user: User | null;
+  onComplete: () => void;
+}) => {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [position, setPosition] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (user && isOpen) {
+      const names = user.displayName?.split(' ') || [];
+      setFirstName(names[0] || "");
+      setLastName(names.slice(1).join(' ') || "");
+      setEmail(user.email || "");
+    }
+  }, [user, isOpen]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setLoading(true);
+    try {
+      await addDoc(collection(db, "employees"), {
+        firstName,
+        lastName,
+        email,
+        position,
+        userId: user.uid,
+        registeredAt: new Date().toISOString()
+      });
+      onComplete();
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, "employees");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-[#001D40]/60 backdrop-blur-md"
+          />
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden"
+          >
+            <div className="bg-[#001D40] p-8 text-white text-center">
+              <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white/10">
+                <Users size={32} />
+              </div>
+              <h3 className="text-xl font-black">Finaliser votre Profil</h3>
+              <p className="text-sm text-white/60 mt-2">Bienvenue chez Thalès. Merci de compléter vos informations pour accéder au planning.</p>
+            </div>
+            
+            <form onSubmit={handleSubmit} className="p-8 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Prénom</label>
+                  <input 
+                    required
+                    value={firstName}
+                    onChange={e => setFirstName(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Nom</label>
+                  <input 
+                    required
+                    value={lastName}
+                    onChange={e => setLastName(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Email Professionnel (Outlook...)</label>
+                <input 
+                  required
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="votre.nom@thalesgroup.com"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Fonction ou poste occupé</label>
+                <input 
+                  required
+                  value={position}
+                  onChange={e => setPosition(e.target.value)}
+                  placeholder="Ex: Ingénieur Système"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium bg-white"
+                />
+              </div>
+              <button 
+                type="submit"
+                disabled={loading}
+                className="w-full bg-[#001D40] text-white py-3 rounded-lg font-bold hover:bg-blue-900 transition-all shadow-xl shadow-blue-900/20 disabled:bg-slate-300 mt-4"
+              >
+                {loading ? "Création du profil..." : "Commencer à utiliser Connect"}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
 const AdminDashboard = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
-  const [department, setDepartment] = useState("");
+  const [position, setPosition] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -453,12 +579,12 @@ const AdminDashboard = () => {
         firstName,
         lastName,
         email,
-        department
+        position
       });
       setFirstName("");
       setLastName("");
       setEmail("");
-      setDepartment("");
+      setPosition("");
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, "employees");
     } finally {
@@ -514,9 +640,9 @@ const AdminDashboard = () => {
               className="px-3 py-2 border border-slate-200 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none md:col-span-1"
             />
             <input 
-              placeholder="Service (optionnel)"
-              value={department}
-              onChange={e => setDepartment(e.target.value)}
+              placeholder="Fonction / Poste"
+              value={position}
+              onChange={e => setPosition(e.target.value)}
               className="px-3 py-2 border border-slate-200 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
             <button 
@@ -536,7 +662,7 @@ const AdminDashboard = () => {
               <tr className="bg-slate-50 border-b border-slate-100">
                 <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Employé</th>
                 <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email</th>
-                <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Service</th>
+                <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Fonction</th>
                 <th className="p-4 text-right"></th>
               </tr>
             </thead>
@@ -560,8 +686,8 @@ const AdminDashboard = () => {
                     </td>
                     <td className="p-4 text-sm text-slate-500">{emp.email}</td>
                     <td className="p-4 text-sm text-slate-500">
-                      {emp.department ? (
-                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold uppercase">{emp.department}</span>
+                      {emp.position ? (
+                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold uppercase">{emp.position}</span>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
@@ -606,20 +732,50 @@ export default function App() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRegistrationModalOpen, setIsRegistrationModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'mine' | 'admin'>('all');
   const [now, setNow] = useState(new Date());
+  const [isCheckingRegistration, setIsCheckingRegistration] = useState(false);
 
   const weekDays = useMemo(() => getWeekDays(now), [now]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
+    let registrationUnsubscribe: (() => void) | null = null;
+
     const unsubscribeAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      
+      // Cleanup previous registration listener
+      if (registrationUnsubscribe) {
+        registrationUnsubscribe();
+        registrationUnsubscribe = null;
+      }
+
+      if (u) {
+        // Check if user exists in employees collection
+        setIsCheckingRegistration(true);
+        const q = query(collection(db, "employees"), where("email", "==", u.email));
+        registrationUnsubscribe = onSnapshot(q, (snapshot) => {
+          if (snapshot.empty) {
+            setIsRegistrationModalOpen(true);
+          } else {
+            setIsRegistrationModalOpen(false);
+          }
+          setIsCheckingRegistration(false);
+        }, (err) => {
+          console.error("Registration check failed:", err);
+          setIsCheckingRegistration(false);
+        });
+      } else {
+        setIsRegistrationModalOpen(false);
+      }
     });
 
     return () => {
       clearInterval(timer);
       unsubscribeAuth();
+      if (registrationUnsubscribe) registrationUnsubscribe();
     };
   }, []);
 
@@ -814,6 +970,12 @@ export default function App() {
         onClose={() => setIsModalOpen(false)} 
         room={selectedRoom}
         user={user}
+      />
+
+      <RegistrationModal 
+        isOpen={isRegistrationModalOpen}
+        user={user}
+        onComplete={() => setIsRegistrationModalOpen(false)}
       />
     </div>
   );
