@@ -208,6 +208,28 @@ const ReservationModal = ({
       };
 
       await addDoc(collection(db, "reservations"), resData);
+
+      // Identify selected participants' emails for notification
+      const participantsData = employees
+        .filter(emp => participants.includes(`${emp.firstName} ${emp.lastName}`))
+        .map(emp => ({ name: `${emp.firstName} ${emp.lastName}`, email: emp.email }));
+
+      if (participantsData.length > 0) {
+        // Call backend API to send emails
+        fetch("/api/send-invitations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            subject,
+            roomName: room.name,
+            startTime: startDateTime,
+            endTime: endDateTime,
+            organizerName: resData.organizerName,
+            participants: participantsData
+          })
+        }).catch(err => console.error("Failed to send notification emails:", err));
+      }
+
       onClose();
       setSubject("");
       setParticipants([]);
@@ -595,6 +617,15 @@ export default function App() {
       setUser(u);
     });
 
+    return () => {
+      clearInterval(timer);
+      unsubscribeAuth();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
     const qRooms = query(collection(db, "rooms"));
     const unsubscribeRooms = onSnapshot(qRooms, (snapshot) => {
       const roomList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Room));
@@ -615,6 +646,8 @@ export default function App() {
           }
         });
       }
+    }, (err) => {
+       console.error("Rooms subscription failed:", err);
     });
 
     const qReservations = query(collection(db, "reservations"), orderBy("startTime", "asc"));
@@ -625,12 +658,10 @@ export default function App() {
     });
 
     return () => {
-      clearInterval(timer);
-      unsubscribeAuth();
       unsubscribeRooms();
       unsubscribeReservations();
     };
-  }, []);
+  }, [user]);
 
   const handleDeleteReservation = async (id: string) => {
     if (confirm("Voulez-vous vraiment supprimer cette réservation ?")) {

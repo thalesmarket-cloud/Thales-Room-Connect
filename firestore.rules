@@ -57,7 +57,6 @@ service cloud.firestore {
              data.subject is string && data.subject.size() > 0 && data.subject.size() <= 200 &&
              data.startTime is string && data.endTime is string &&
              data.startTime < data.endTime &&
-             data.organizerId == request.auth.uid &&
              data.organizerName is string &&
              (!('participants' in data) || data.participants is list) &&
              (!('createdAt' in data) || data.createdAt is string) &&
@@ -67,25 +66,23 @@ service cloud.firestore {
     // --- COLLECTION RULES ---
 
     match /rooms/{roomId} {
-      // Anyone signed in can view rooms
       allow read: if isSignedIn();
-      // Only system/admins can modify rooms usually, but for this demo let's allow room creation if verified
       allow create: if isVerified() && isValidRoom(incoming());
-      allow update, delete: if false; // Rooms are static for now
+      allow update, delete: if isAdmin();
     }
 
     match /employees/{employeeId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidEmployee(incoming());
+      allow create, update: if isAdmin() && isValidEmployee(incoming());
+      allow delete: if isAdmin();
     }
 
     match /reservations/{reservationId} {
-      // List rules: enforce query security
-      allow list: if isSignedIn(); // Can be refined to only show upcoming or specific rooms
-      allow get: if isSignedIn();
+      allow read: if isSignedIn();
 
       allow create: if isVerified() &&
                     isValidReservation(incoming()) &&
+                    incoming().organizerId == request.auth.uid &&
                     exists(/databases/$(database)/documents/rooms/$(incoming().roomId));
 
       allow update: if isVerified() &&
@@ -93,7 +90,6 @@ service cloud.firestore {
                     isValidReservation(incoming()) &&
                     incoming().organizerId == existing().organizerId &&
                     incoming().roomId == existing().roomId &&
-                    // Action based update: can change subject, time, participants
                     incoming().diff(existing()).affectedKeys().hasOnly(['subject', 'startTime', 'endTime', 'participants', 'updatedAt']);
 
       allow delete: if isVerified() && (isOwner(existing().organizerId) || isAdmin());
