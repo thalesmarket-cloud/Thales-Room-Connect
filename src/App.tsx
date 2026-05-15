@@ -563,7 +563,7 @@ const AdminDashboard = () => {
   );
 };
 
-const DAYS = ['LUN', 'MAR', 'MER', 'JEU', 'VEN'];
+const ALL_DAYS = ['DIM', 'LUN', 'MAR', 'MER', 'JEU', 'VEN', 'SAM'];
 
 const getWeekDays = (now: Date) => {
   const start = new Date(now);
@@ -571,7 +571,7 @@ const getWeekDays = (now: Date) => {
   const diff = start.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
   const monday = new Date(start.setDate(diff));
   
-  return Array.from({ length: 5 }, (_, i) => {
+  return Array.from({ length: 14 }, (_, i) => {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     return d;
@@ -601,12 +601,19 @@ export default function App() {
       setRooms(roomList);
       if (roomList.length === 0) {
         const initialRooms = [
-          { name: "Salle A102 (Vivaldi)", capacity: 12, equipment: ["Vidéoprojecteur", "Tableau Blanc"] },
+          { name: "Salle de réunion", capacity: 12, equipment: ["Vidéoprojecteur", "Tableau Blanc"] },
           { name: "Espace Innovation", capacity: 8, equipment: ["Écran tactile", "Machine à café"] },
           { name: "Boardroom Delta", capacity: 20, equipment: ["Visioconférence", "Micro-pieuvres"] },
           { name: "Focus Room 1", capacity: 2, equipment: ["Réduction sonore"] },
         ];
         initialRooms.forEach(r => addDoc(collection(db, "rooms"), r));
+      } else {
+        // Migration logic: Rename the room if it's still using the old name
+        roomList.forEach(room => {
+          if (room.name === "Salle A102 (Vivaldi)") {
+            updateDoc(doc(db, "rooms", room.id), { name: "Salle de réunion" });
+          }
+        });
       }
     });
 
@@ -690,133 +697,79 @@ export default function App() {
             </header>
 
             {/* Content Area */}
-            <div className="flex-1 p-6 grid grid-cols-12 gap-6 overflow-hidden">
+            <div className="flex-1 p-6 flex flex-col overflow-hidden">
               {/* Main Planning Section - TIMELINE VIEW */}
-              <section className="col-span-9 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <section className="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                   <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider">
                     <Calendar size={16} className="text-blue-600" />
-                    Planning d'Occupation
+                    Planning d'Occupation (14 jours)
                   </h3>
                   <div className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded">
-                    Semaine du {weekDays[0].toLocaleDateString()} au {weekDays[4].toLocaleDateString()}
+                    Du {weekDays[0].toLocaleDateString()} au {weekDays[13].toLocaleDateString()}
                   </div>
                 </div>
                 
-                <div className="flex-1 grid grid-cols-5 divide-x divide-slate-100 overflow-hidden">
-                  {weekDays.map((dayDate, idx) => {
-                    const dayStr = dayDate.toISOString().split('T')[0];
-                    const dayReservations = filteredReservations.filter(r => r.startTime.startsWith(dayStr));
-                    const isToday = dayStr === now.toISOString().split('T')[0];
+                <div className="flex-1 overflow-x-auto custom-scrollbar bg-slate-50/30">
+                  <div className="flex h-full min-w-max divide-x divide-slate-100">
+                    {weekDays.map((dayDate, idx) => {
+                      const dayStr = dayDate.toISOString().split('T')[0];
+                      const dayReservations = filteredReservations.filter(r => r.startTime.startsWith(dayStr));
+                      const isToday = dayStr === now.toISOString().split('T')[0];
+                      const isWeekend = dayDate.getDay() === 0 || dayDate.getDay() === 6;
 
-                    return (
-                      <div key={idx} className="flex flex-col min-w-0">
-                        <div className={`h-10 flex items-center justify-center border-b border-slate-100 font-bold text-[11px] ${isToday ? 'bg-blue-100 text-blue-800' : 'bg-slate-50 text-slate-500'}`}>
-                          {DAYS[idx]} {dayDate.getDate()}
-                          {isToday && <span className="ml-1 w-1 h-1 bg-blue-600 rounded-full animate-ping" />}
+                      return (
+                        <div key={idx} className="flex flex-col w-56 shrink-0">
+                          <div className={`h-10 flex flex-col items-center justify-center border-b border-slate-100 font-bold ${isToday ? 'bg-blue-600 text-white' : isWeekend ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
+                            <div className="text-[11px] leading-none">{ALL_DAYS[dayDate.getDay()]}</div>
+                            <div className="text-[13px] leading-none mt-0.5">{dayDate.getDate()} {dayDate.toLocaleDateString('fr-FR', { month: 'short' })}</div>
+                            {isToday && <span className="absolute top-1 right-1 w-1.5 h-1.5 bg-white rounded-full animate-ping" />}
+                          </div>
+                          
+                          <div className={`flex-1 p-2 space-y-2 overflow-y-auto custom-scrollbar ${isWeekend ? 'bg-slate-50/50' : 'bg-white'}`}>
+                            {dayReservations.length === 0 ? (
+                              <div className="h-full flex items-center justify-center">
+                                <p className="text-[10px] text-slate-200 font-medium italic">{isWeekend ? 'Fermé' : 'Libre'}</p>
+                              </div>
+                            ) : (
+                              dayReservations.map(res => {
+                                const isNow = new Date() >= new Date(res.startTime) && new Date() <= new Date(res.endTime);
+                                const formatTime = (iso: string) => iso.split('T')[1].substring(0, 5);
+
+                                return (
+                                  <motion.div 
+                                    key={res.id}
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className={`p-2.5 rounded-lg text-[10px] border-l-4 shadow-sm group relative ${
+                                      isNow 
+                                        ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-200 ring-inset' 
+                                        : 'bg-blue-50 border-blue-500 hover:bg-blue-100 transition-colors'
+                                    }`}
+                                  >
+                                    <p className="font-bold text-slate-800 truncate mb-0.5 uppercase tracking-tighter">{res.subject}</p>
+                                    <div className="flex items-center gap-1 text-blue-600 font-black opacity-80 mb-1">
+                                      <Clock size={10} />
+                                      {formatTime(res.startTime)} - {formatTime(res.endTime)}
+                                    </div>
+                                    <p className="text-slate-500 italic truncate text-[9px]">Par {res.organizerName}</p>
+                                    
+                                    {user?.uid === res.organizerId || user?.email === "thales.market@gmail.com" ? (
+                                      <button 
+                                        onClick={() => handleDeleteReservation(res.id)}
+                                        className="absolute top-1 right-1 opacity-100 p-1 text-red-400 hover:text-red-500 transition-all bg-white rounded-full shadow-md z-10"
+                                      >
+                                        <Trash2 size={12} strokeWidth={2.5} />
+                                      </button>
+                                    ) : null}
+                                  </motion.div>
+                                );
+                              })
+                            )}
+                          </div>
                         </div>
-                        
-                        <div className="flex-1 p-2 space-y-2 overflow-y-auto bg-white/50 custom-scrollbar">
-                          {dayReservations.length === 0 ? (
-                            <div className="h-full flex items-center justify-center">
-                              <p className="text-[10px] text-slate-200 font-medium whitespace-nowrap overflow-hidden">Libre</p>
-                            </div>
-                          ) : (
-                            dayReservations.map(res => {
-                              const isNow = new Date() >= new Date(res.startTime) && new Date() <= new Date(res.endTime);
-                              const formatTime = (iso: string) => iso.split('T')[1].substring(0, 5);
-
-                              return (
-                                <motion.div 
-                                  key={res.id}
-                                  initial={{ opacity: 0, y: 5 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  className={`p-2 rounded-lg text-[10px] border-l-4 shadow-sm group relative ${
-                                    isNow 
-                                      ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-200' 
-                                      : 'bg-blue-50 border-blue-500 hover:bg-blue-100 transition-colors'
-                                  }`}
-                                >
-                                  <p className="font-bold text-slate-800 truncate mb-0.5 uppercase">{res.subject}</p>
-                                  <div className="flex items-center gap-1 text-blue-600 font-bold opacity-80 mb-1">
-                                    <Clock size={10} />
-                                    {formatTime(res.startTime)} - {formatTime(res.endTime)}
-                                  </div>
-                                  <p className="text-slate-500 italic truncate">Par {res.organizerName}</p>
-                                  
-                                  {user?.uid === res.organizerId || user?.email === "thales.market@gmail.com" ? (
-                                    <button 
-                                      onClick={() => handleDeleteReservation(res.id)}
-                                      className="absolute top-1 right-1 opacity-100 p-1 text-red-400 hover:text-red-500 transition-all bg-white rounded-full shadow-md z-10"
-                                    >
-                                      <Trash2 size={12} strokeWidth={2.5} />
-                                    </button>
-                                  ) : null}
-                                </motion.div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {/* Side Info Panel */}
-              <section className="col-span-3 flex flex-col gap-6 overflow-hidden">
-                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col overflow-hidden">
-                  <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <Info size={18} className="text-blue-600" />
-                    Détails de la Salle
-                  </h3>
-                  
-                  <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">
-                    <div className="bg-slate-50 rounded-lg p-4 border border-slate-100">
-                      <h4 className="font-black text-[#001D40] text-lg mb-1 leading-tight">{rooms[0]?.name}</h4>
-                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-3">Salle de Prestige</p>
-                      
-                      <div className="grid grid-cols-2 gap-3 mb-4">
-                          <div className="bg-white p-2 rounded border border-slate-100">
-                            <p className="text-[8px] text-slate-400 font-bold uppercase">Capacité</p>
-                            <p className="text-sm font-black text-blue-600">{rooms[0]?.capacity} Pers.</p>
-                          </div>
-                          <div className="bg-white p-2 rounded border border-slate-100">
-                            <p className="text-[8px] text-slate-400 font-bold uppercase">Statut</p>
-                            <p className="text-sm font-black text-green-600">Ouvert</p>
-                          </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Équipements :</p>
-                          <div className="flex flex-wrap gap-1">
-                            {rooms[0]?.equipment.map((eq, i) => (
-                              <span key={i} className="text-[9px] bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-medium shadow-sm">
-                                {eq}
-                              </span>
-                            ))}
-                          </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-center border-dashed">
-                      <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 mx-auto">
-                        <Clock className="text-orange-500" size={20} />
-                      </div>
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-tighter">Vérification Cloud</h4>
-                      <p className="text-[9px] text-slate-500 mt-2 px-2 leading-relaxed">
-                        Les créneaux sont limités à 2h par défaut pour assurer la disponibilité à tous les collaborateurs.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="bg-[#001D40] rounded-xl p-5 text-white shadow-xl shadow-blue-900/20">
-                  <h4 className="text-xs font-bold uppercase tracking-widest opacity-50 mb-3">Support IT Thalès</h4>
-                  <p className="text-[11px] leading-relaxed mb-4">Besoin d'aide avec les équipements de la salle ? Contactez l'extension 2404.</p>
-                  <div className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-[10px] font-bold uppercase">Ligne directe disponible</span>
+                      );
+                    })}
                   </div>
                 </div>
               </section>
