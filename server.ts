@@ -19,12 +19,15 @@ async function startServer() {
     const { subject, roomName, startTime, endTime, organizerName, participants } = req.body;
 
     if (!process.env.RESEND_API_KEY) {
-      console.warn("RESEND_API_KEY is missing. Skipping email sending.");
-      return res.status(200).json({ success: true, message: "Emails ignored (no API key)" });
+      console.warn("RESEND_API_KEY is missing.");
+      return res.status(400).json({ 
+        success: false, 
+        error: "Configuration manquante (RESEND_API_KEY). Veuillez configurer la clé API dans les réglages." 
+      });
     }
 
     try {
-      const promises = participants.map(async (p: { name: string, email: string }) => {
+      const results = await Promise.all(participants.map(async (p: { name: string, email: string }) => {
         return resend.emails.send({
           from: 'Thalès Room Connect <onboarding@resend.dev>',
           to: p.email,
@@ -44,13 +47,22 @@ async function startServer() {
             </div>
           `
         });
-      });
+      }));
 
-      await Promise.all(promises);
+      // Check for errors in Resend responses
+      const errors = results.filter(r => r.error);
+      if (errors.length > 0) {
+        console.error("Resend API Errors:", errors);
+        return res.status(500).json({ 
+          success: false, 
+          error: "Certains emails n'ont pas pu être envoyés. Vérifiez si vous êtes en mode Sandbox (limité à votre propre email)." 
+        });
+      }
+
       res.json({ success: true });
-    } catch (error) {
-      console.error("Error sending emails:", error);
-      res.status(500).json({ error: "Failed to send emails" });
+    } catch (error: any) {
+      console.error("Critical error sending emails:", error);
+      res.status(500).json({ success: false, error: error.message || "Erreur interne lors de l'envoi des invitations." });
     }
   });
 
