@@ -72,9 +72,14 @@ const Sidebar = ({
   return (
     <aside className="w-64 bg-[#001D40] text-white flex flex-col shrink-0">
       <div className="p-6 border-b border-white/10">
-        <div className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-500 rounded-sm flex items-center justify-center font-black">T</div>
-          THALES <span className="font-light opacity-80">Connect</span>
+        <img 
+          src="https://res.cloudinary.com/dmutnjgp8/image/upload/v1771338339/Logo_Thales_White_3_l4ut7h.png" 
+          alt="Thalès" 
+          className="h-6 w-auto mb-2"
+          referrerPolicy="no-referrer"
+        />
+        <div className="text-lg font-black tracking-tighter text-white">
+          ROOM CONNECT
         </div>
       </div>
       <nav className="flex-1 py-6">
@@ -666,6 +671,107 @@ const InvitationBanner = ({
   );
 };
 
+const MyReservationsList = ({ 
+  reservations, 
+  user, 
+  onDelete,
+  currentEmployee
+}: { 
+  reservations: Reservation[]; 
+  user: User | null;
+  onDelete: (id: string) => void;
+  currentEmployee: Employee | null;
+}) => {
+  const sorted = [...reservations].sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  
+  const formatDateTime = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + 
+           ' à ' + iso.split('T')[1].substring(0, 5);
+  };
+
+  return (
+    <div className="flex-1 p-8 overflow-y-auto bg-slate-50 custom-scrollbar">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <header className="mb-8">
+          <h2 className="text-2xl font-black text-[#001D40] uppercase tracking-tight">Mes Réunions & Invitations</h2>
+          <p className="text-slate-500 text-sm">Liste complète de vos réservations, y compris celles au-delà de 2 semaines.</p>
+        </header>
+
+        {sorted.length === 0 ? (
+          <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-16 text-center">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
+              <Calendar size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-700">Aucune réunion trouvée</h3>
+            <p className="text-slate-400 text-sm mt-1">Vous n'avez pas encore organisé ou été invité à une réunion.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {sorted.map(res => {
+              const isPast = new Date(res.endTime) < new Date();
+              const isNow = new Date() >= new Date(res.startTime) && new Date() <= new Date(res.endTime);
+              const isOrganizer = user?.uid === res.organizerId;
+
+              return (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  key={res.id}
+                  className={`bg-white rounded-xl border border-slate-200 p-6 flex items-center justify-between shadow-sm transition-all hover:shadow-md ${isPast ? 'opacity-60 bg-slate-50/50' : ''}`}
+                >
+                  <div className="flex items-center gap-6">
+                    <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${isNow ? 'bg-orange-600 text-white animate-pulse shadow-lg shadow-orange-500/20' : isPast ? 'bg-slate-200 text-slate-500' : 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'}`}>
+                      <Calendar size={24} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">{res.subject}</h4>
+                        {isNow && <span className="px-2 py-0.5 bg-orange-100 text-orange-600 text-[9px] font-black uppercase rounded">En cours</span>}
+                        {isPast && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-black uppercase rounded">Terminée</span>}
+                      </div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-500 font-medium">
+                        <div className="flex items-center gap-1.5 text-blue-600 font-bold">
+                          <Clock size={16} />
+                          {formatDateTime(res.startTime)}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Users size={16} />
+                          {isOrganizer ? "Organisé par vous" : `Invité par ${res.organizerName}`}
+                        </div>
+                      </div>
+                      {res.participants.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1">
+                          {res.participants.map((p, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-bold rounded border border-slate-200">
+                              {p}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {(isOrganizer || user?.email === "thales.market@gmail.com") && (
+                      <button 
+                        onClick={() => onDelete(res.id)}
+                        className="p-3 text-red-500 hover:text-white hover:bg-red-500 rounded-lg transition-all border border-red-50 bg-red-50/30 shadow-sm active:scale-90"
+                        title="Supprimer la réservation"
+                      >
+                        <Trash2 size={20} />
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [firstName, setFirstName] = useState("");
@@ -1010,6 +1116,13 @@ export default function App() {
         />
         {activeTab === 'admin' ? (
           <AdminDashboard />
+        ) : activeTab === 'mine' ? (
+          <MyReservationsList 
+            reservations={filteredReservations} 
+            user={user} 
+            onDelete={handleDeleteReservation}
+            currentEmployee={currentEmployee}
+          />
         ) : (
           <>
             {/* Header Bar */}
