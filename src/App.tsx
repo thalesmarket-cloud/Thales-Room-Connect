@@ -163,23 +163,31 @@ const ReservationModal = ({
   const [endTime, setEndTime] = useState("10:00");
   const [participants, setParticipants] = useState<string[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && user) {
+      // Fetch all employees for invitation
       const q = query(collection(db, "employees"));
-      return onSnapshot(q, (snapshot) => {
-        setEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
+        setEmployees(list);
+        
+        // Find current user's profile
+        const profile = list.find(emp => emp.userId === user.uid || emp.email === user.email);
+        if (profile) setCurrentEmployee(profile);
       });
+      return unsubscribe;
     }
-  }, [isOpen]);
+  }, [isOpen, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!room || !user) return;
+    if (!room || !user || !currentEmployee) return;
 
     setLoading(true);
     setError("");
@@ -200,8 +208,8 @@ const ReservationModal = ({
         startTime: startDateTime,
         endTime: endDateTime,
         organizerId: user.uid,
-        organizerName: user.displayName || user.email || "Unknown",
-        organizerEmail: user.email || "",
+        organizerName: `${currentEmployee.firstName} ${currentEmployee.lastName}`,
+        organizerEmail: currentEmployee.email,
         participants: participants,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -240,9 +248,10 @@ const ReservationModal = ({
     }
   };
 
-  const filteredEmployees = employees.filter(emp => 
-    `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(search.toLowerCase())
-  );
+  // Exclude current user from invitation list
+  const filteredEmployees = employees
+    .filter(emp => emp.userId !== user?.uid && emp.email !== currentEmployee?.email)
+    .filter(emp => `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(search.toLowerCase()));
 
   const toggleParticipant = (name: string) => {
     if (participants.includes(name)) {
@@ -285,6 +294,16 @@ const ReservationModal = ({
                 </div>
               )}
 
+              <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
+                <label className="block text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Organisateur</label>
+                <div className="flex items-center gap-2 text-sm font-black text-blue-900">
+                   <div className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-[10px]">
+                      {currentEmployee?.firstName[0]}{currentEmployee?.lastName[0]}
+                   </div>
+                   {currentEmployee ? `${currentEmployee.firstName} ${currentEmployee.lastName}` : "Chargement..."}
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Sujet de la réunion</label>
                 <input 
@@ -293,7 +312,7 @@ const ReservationModal = ({
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="ex: Review Sprint Architecture"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all text-sm font-medium"
                 />
               </div>
 
@@ -340,7 +359,7 @@ const ReservationModal = ({
                     className="w-full px-3 py-2 border border-slate-200 rounded-md flex flex-wrap gap-1 cursor-pointer min-h-[42px] bg-white hover:border-blue-400 transition-colors shadow-sm"
                   >
                     {participants.length === 0 ? (
-                      <span className="text-sm text-slate-400">Sélectionner des employés...</span>
+                      <span className="text-sm text-slate-400">Sélectionner des invités...</span>
                     ) : (
                       participants.map((p, i) => (
                         <span key={i} className="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm">
@@ -416,10 +435,10 @@ const ReservationModal = ({
                 </button>
                 <button 
                   type="submit" 
-                  disabled={loading}
+                  disabled={loading || !currentEmployee}
                   className="flex-1 px-4 py-2 bg-[#001D40] text-white rounded-md hover:bg-blue-900 transition-colors font-bold text-sm shadow-lg shadow-blue-900/20 disabled:bg-slate-300"
                 >
-                  {loading ? "Chargement..." : "Réserver la salle"}
+                  {loading ? "Chargement..." : "Confirmer"}
                 </button>
               </div>
             </form>
