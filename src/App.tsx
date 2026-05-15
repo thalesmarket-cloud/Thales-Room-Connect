@@ -27,16 +27,20 @@ import {
   ChevronRight,
   Info,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Settings,
+  Search,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db, googleProvider, signInWithPopup, signOut } from './firebase';
-import { Room, Reservation, OperationType } from './types';
+import { Room, Reservation, OperationType, Employee } from './types';
 import { handleFirestoreError } from './utils';
 
 // --- Components ---
 
-const Sidebar = ({ user, activeTab, setActiveTab }: { user: User | null, activeTab: 'all' | 'mine', setActiveTab: (t: 'all' | 'mine') => void }) => {
+const Sidebar = ({ user, activeTab, setActiveTab }: { user: User | null, activeTab: 'all' | 'mine' | 'admin', setActiveTab: (t: 'all' | 'mine' | 'admin') => void }) => {
+  const isAdmin = user?.email === "thales.market@gmail.com";
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
@@ -81,6 +85,16 @@ const Sidebar = ({ user, activeTab, setActiveTab }: { user: User | null, activeT
             <CheckCircle2 className="w-5 h-5 opacity-70" />
             Mes Réservations
           </button>
+          
+          {isAdmin && (
+            <button 
+              onClick={() => setActiveTab('admin')}
+              className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors w-full text-left ${activeTab === 'admin' ? 'bg-white/10 text-white' : 'text-white/60 hover:bg-white/5'}`}
+            >
+              <Settings className="w-5 h-5 opacity-70" />
+              Panel Admin (Employés)
+            </button>
+          )}
         </div>
       </nav>
       <div className="p-4 border-t border-white/10">
@@ -147,9 +161,21 @@ const ReservationModal = ({
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("10:00");
-  const [participants, setParticipants] = useState("");
+  const [participants, setParticipants] = useState<string[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (isOpen) {
+      const q = query(collection(db, "employees"));
+      return onSnapshot(q, (snapshot) => {
+        setEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
+      });
+    }
+  }, [isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,7 +202,7 @@ const ReservationModal = ({
         organizerId: user.uid,
         organizerName: user.displayName || user.email || "Unknown",
         organizerEmail: user.email || "",
-        participants: participants.split(",").map(p => p.trim()).filter(p => p),
+        participants: participants,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -184,11 +210,23 @@ const ReservationModal = ({
       await addDoc(collection(db, "reservations"), resData);
       onClose();
       setSubject("");
-      setParticipants("");
+      setParticipants([]);
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, "reservations");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const filteredEmployees = employees.filter(emp => 
+    `${emp.firstName} ${emp.lastName}`.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const toggleParticipant = (name: string) => {
+    if (participants.includes(name)) {
+      setParticipants(prev => prev.filter(p => p !== name));
+    } else {
+      setParticipants(prev => [...prev, name]);
     }
   };
 
@@ -207,7 +245,7 @@ const ReservationModal = ({
             initial={{ scale: 0.95, opacity: 0, y: 10 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 10 }}
-            className="bg-white rounded-xl shadow-2xl w-full max-w-md relative z-10 overflow-hidden border border-slate-200"
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md relative z-10 border border-slate-200"
           >
             <div className="bg-[#001D40] p-5 text-white">
               <h3 className="text-lg font-bold flex items-center gap-2">
@@ -270,15 +308,80 @@ const ReservationModal = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Participants (sép. par virgule)</label>
-                <textarea 
-                  value={participants}
-                  onChange={(e) => setParticipants(e.target.value)}
-                  placeholder="Jean D., Marie L., Claude T."
-                  rows={2}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
-                />
+                <div className="relative">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 flex justify-between items-center">
+                    Invités
+                    <span className="text-[9px] font-normal lowercase opacity-60">Liste des collaborateurs</span>
+                  </label>
+                  <div 
+                    onClick={() => setShowDropdown(!showDropdown)}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md flex flex-wrap gap-1 cursor-pointer min-h-[42px] bg-white hover:border-blue-400 transition-colors shadow-sm"
+                  >
+                    {participants.length === 0 ? (
+                      <span className="text-sm text-slate-400">Sélectionner des employés...</span>
+                    ) : (
+                      participants.map((p, i) => (
+                        <span key={i} className="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                          {p}
+                          <button type="button" onClick={(e) => { e.stopPropagation(); toggleParticipant(p); }} className="hover:text-red-200 ml-1">&times;</button>
+                        </span>
+                      ))
+                    )}
+                  </div>
+
+                  <AnimatePresence>
+                    {showDropdown && (
+                      <>
+                        <div className="fixed inset-0 z-[140]" onClick={() => setShowDropdown(false)} />
+                        <motion.div 
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          className="absolute left-0 right-0 top-full mt-2 bg-white border border-slate-200 rounded-lg shadow-2xl z-[150] max-h-80 overflow-hidden flex flex-col"
+                        >
+                        <div className="bg-slate-50 p-2 border-b border-slate-100">
+                          <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input 
+                              type="text"
+                              value={search}
+                              onChange={(e) => setSearch(e.target.value)}
+                              placeholder="Filtrez par nom..."
+                              className="w-full pl-10 pr-3 py-2 text-xs border border-slate-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white font-medium"
+                              onClick={(e) => e.stopPropagation()}
+                              autoFocus
+                            />
+                          </div>
+                        </div>
+                        <div className="overflow-y-auto flex-1 custom-scrollbar">
+                          {filteredEmployees.length === 0 ? (
+                            <div className="px-4 py-6 text-xs text-slate-400 text-center italic">Aucun collaborateur trouvé</div>
+                          ) : (
+                            <div className="py-1">
+                              {filteredEmployees.map((emp) => {
+                                const name = `${emp.firstName} ${emp.lastName}`;
+                                const isSelected = participants.includes(name);
+                                return (
+                                  <div 
+                                    key={emp.id}
+                                    onClick={(e) => { e.stopPropagation(); toggleParticipant(name); }}
+                                    className={`px-4 py-2.5 text-xs flex items-center justify-between cursor-pointer transition-all border-b border-slate-50 last:border-0 ${isSelected ? 'text-blue-700 bg-blue-50 font-black' : 'text-slate-600 hover:bg-slate-50'}`}
+                                  >
+                                    <div className="flex flex-col">
+                                      <span className="text-sm">{name}</span>
+                                      <span className="text-[9px] opacity-60 font-normal">{emp.department || "Général"}</span>
+                                    </div>
+                                    {isSelected ? <CheckCircle2 size={16} className="text-blue-600" /> : <div className="w-4 h-4 rounded-full border border-slate-200" />}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-slate-100">
@@ -305,6 +408,161 @@ const ReservationModal = ({
   );
 };
 
+const AdminDashboard = () => {
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [department, setDepartment] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const q = query(collection(db, "employees"), orderBy("lastName", "asc"));
+    return onSnapshot(q, (snapshot) => {
+      setEmployees(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee)));
+    });
+  }, []);
+
+  const handleAddEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await addDoc(collection(db, "employees"), {
+        firstName,
+        lastName,
+        email,
+        department
+      });
+      setFirstName("");
+      setLastName("");
+      setEmail("");
+      setDepartment("");
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, "employees");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteEmployee = async (id: string) => {
+    if (confirm("Supprimer cet employé ?")) {
+      try {
+        await deleteDoc(doc(db, "employees", id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `employees/${id}`);
+      }
+    }
+  };
+
+  return (
+    <div className="flex-1 p-8 overflow-y-auto bg-slate-50">
+      <div className="max-w-4xl mx-auto space-y-8">
+        <header>
+          <h2 className="text-2xl font-black text-[#001D40]">Panel de Gestion des Employés</h2>
+          <p className="text-slate-500 text-sm">Ajoutez ou supprimez les membres de l'équipe pouvant être invités aux réunions.</p>
+        </header>
+
+        {/* Add Employee Form */}
+        <section className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+          <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+            <Plus size={18} className="text-blue-500" />
+            Nouvel Employé
+          </h3>
+          <form onSubmit={handleAddEmployee} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <input 
+              required
+              placeholder="Prénom"
+              value={firstName}
+              onChange={e => setFirstName(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+            <input 
+              required
+              placeholder="Nom"
+              value={lastName}
+              onChange={e => setLastName(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+            <input 
+              required
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none md:col-span-1"
+            />
+            <input 
+              placeholder="Service (optionnel)"
+              value={department}
+              onChange={e => setDepartment(e.target.value)}
+              className="px-3 py-2 border border-slate-200 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+            <button 
+              type="submit"
+              disabled={loading}
+              className="md:col-span-4 bg-[#001D40] text-white py-2 rounded font-bold hover:bg-blue-900 transition-all disabled:bg-slate-300"
+            >
+              {loading ? "Ajout..." : "Ajouter au répertoire"}
+            </button>
+          </form>
+        </section>
+
+        {/* Employee List */}
+        <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Employé</th>
+                <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Email</th>
+                <th className="p-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Service</th>
+                <th className="p-4 text-right"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {employees.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-slate-400 italic text-sm">
+                    Aucun employé enregistré.
+                  </td>
+                </tr>
+              ) : (
+                employees.map(emp => (
+                  <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs uppercase">
+                          {emp.firstName[0]}{emp.lastName[0]}
+                        </div>
+                        <span className="font-bold text-slate-700">{emp.firstName} {emp.lastName}</span>
+                      </div>
+                    </td>
+                    <td className="p-4 text-sm text-slate-500">{emp.email}</td>
+                    <td className="p-4 text-sm text-slate-500">
+                      {emp.department ? (
+                        <span className="px-2 py-0.5 bg-slate-100 rounded text-[10px] font-bold uppercase">{emp.department}</span>
+                      ) : (
+                        <span className="text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="p-4 text-right">
+                      <button 
+                        onClick={() => handleDeleteEmployee(emp.id)}
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  );
+};
+
 const DAYS = ['LUN', 'MAR', 'MER', 'JEU', 'VEN'];
 
 const getWeekDays = (now: Date) => {
@@ -326,7 +584,7 @@ export default function App() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'mine'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'mine' | 'admin'>('all');
   const [now, setNow] = useState(new Date());
 
   const weekDays = useMemo(() => getWeekDays(now), [now]);
@@ -371,7 +629,9 @@ export default function App() {
     if (confirm("Voulez-vous vraiment supprimer cette réservation ?")) {
       try {
         await deleteDoc(doc(db, "reservations", id));
-      } catch (err) {
+      } catch (err: any) {
+        console.error("Delete failed:", err);
+        alert("Erreur lors de la suppression. Vérifiez vos permissions.");
         handleFirestoreError(err, OperationType.DELETE, `reservations/${id}`);
       }
     }
@@ -397,166 +657,172 @@ export default function App() {
       <Sidebar user={user} activeTab={activeTab} setActiveTab={setActiveTab} />
       
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header Bar */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
-          <div className="flex items-center gap-4">
-            <h2 className="text-lg font-semibold text-[#001D40]">{rooms[0]?.name || "Thalès Room Connect"}</h2>
-            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded uppercase tracking-wider shadow-sm">Cloud Edition</span>
-          </div>
-          <div className="flex items-center gap-6">
-            <button 
-               onClick={() => {
-                 if (!user) return alert("Connexion requise");
-                 if (rooms.length > 0) {
-                   setSelectedRoom(rooms[0]);
-                   setIsModalOpen(true);
-                 }
-               }}
-               className="bg-[#001D40] text-white px-4 py-2 rounded text-xs font-bold hover:bg-blue-900 transition-all flex items-center gap-2"
-            >
-              <Plus size={14} strokeWidth={3} />
-              Nouveau Créneau
-            </button>
-            <div className="h-6 w-px bg-slate-200"></div>
-            <div className="flex items-center gap-2 text-sm text-slate-500 font-medium whitespace-nowrap">
-              <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]"></span>
-              {now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-            </div>
-          </div>
-        </header>
-
-        {/* Content Area */}
-        <div className="flex-1 p-6 grid grid-cols-12 gap-6 overflow-hidden">
-          {/* Main Planning Section - TIMELINE VIEW */}
-          <section className="col-span-9 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider">
-                <Calendar size={16} className="text-blue-600" />
-                Planning d'Occupation
-              </h3>
-              <div className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded">
-                Semaine du {weekDays[0].toLocaleDateString()} au {weekDays[4].toLocaleDateString()}
+        {activeTab === 'admin' ? (
+          <AdminDashboard />
+        ) : (
+          <>
+            {/* Header Bar */}
+            <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
+              <div className="flex items-center gap-4">
+                <h2 className="text-lg font-semibold text-[#001D40]">{rooms[0]?.name || "Thalès Room Connect"}</h2>
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded uppercase tracking-wider shadow-sm">Cloud Edition</span>
               </div>
-            </div>
-            
-            <div className="flex-1 grid grid-cols-5 divide-x divide-slate-100 overflow-hidden">
-              {weekDays.map((dayDate, idx) => {
-                const dayStr = dayDate.toISOString().split('T')[0];
-                const dayReservations = filteredReservations.filter(r => r.startTime.startsWith(dayStr));
-                const isToday = dayStr === now.toISOString().split('T')[0];
+              <div className="flex items-center gap-6">
+                <button 
+                  onClick={() => {
+                    if (!user) return alert("Connexion requise");
+                    if (rooms.length > 0) {
+                      setSelectedRoom(rooms[0]);
+                      setIsModalOpen(true);
+                    }
+                  }}
+                  className="bg-[#001D40] text-white px-4 py-2 rounded text-xs font-bold hover:bg-blue-900 transition-all flex items-center gap-2"
+                >
+                  <Plus size={14} strokeWidth={3} />
+                  Nouveau Créneau
+                </button>
+                <div className="h-6 w-px bg-slate-200"></div>
+                <div className="flex items-center gap-2 text-sm text-slate-500 font-medium whitespace-nowrap">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.5)]"></span>
+                  {now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            </header>
 
-                return (
-                  <div key={idx} className="flex flex-col min-w-0">
-                    <div className={`h-10 flex items-center justify-center border-b border-slate-100 font-bold text-[11px] ${isToday ? 'bg-blue-100 text-blue-800' : 'bg-slate-50 text-slate-500'}`}>
-                      {DAYS[idx]} {dayDate.getDate()}
-                      {isToday && <span className="ml-1 w-1 h-1 bg-blue-600 rounded-full animate-ping" />}
-                    </div>
-                    
-                    <div className="flex-1 p-2 space-y-2 overflow-y-auto bg-white/50 custom-scrollbar">
-                      {dayReservations.length === 0 ? (
-                        <div className="h-full flex items-center justify-center">
-                          <p className="text-[10px] text-slate-200 font-medium whitespace-nowrap overflow-hidden">Libre</p>
+            {/* Content Area */}
+            <div className="flex-1 p-6 grid grid-cols-12 gap-6 overflow-hidden">
+              {/* Main Planning Section - TIMELINE VIEW */}
+              <section className="col-span-9 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider">
+                    <Calendar size={16} className="text-blue-600" />
+                    Planning d'Occupation
+                  </h3>
+                  <div className="text-[10px] bg-blue-100 text-blue-700 font-bold px-2 py-1 rounded">
+                    Semaine du {weekDays[0].toLocaleDateString()} au {weekDays[4].toLocaleDateString()}
+                  </div>
+                </div>
+                
+                <div className="flex-1 grid grid-cols-5 divide-x divide-slate-100 overflow-hidden">
+                  {weekDays.map((dayDate, idx) => {
+                    const dayStr = dayDate.toISOString().split('T')[0];
+                    const dayReservations = filteredReservations.filter(r => r.startTime.startsWith(dayStr));
+                    const isToday = dayStr === now.toISOString().split('T')[0];
+
+                    return (
+                      <div key={idx} className="flex flex-col min-w-0">
+                        <div className={`h-10 flex items-center justify-center border-b border-slate-100 font-bold text-[11px] ${isToday ? 'bg-blue-100 text-blue-800' : 'bg-slate-50 text-slate-500'}`}>
+                          {DAYS[idx]} {dayDate.getDate()}
+                          {isToday && <span className="ml-1 w-1 h-1 bg-blue-600 rounded-full animate-ping" />}
                         </div>
-                      ) : (
-                        dayReservations.map(res => {
-                          const isNow = new Date() >= new Date(res.startTime) && new Date() <= new Date(res.endTime);
-                          const formatTime = (iso: string) => iso.split('T')[1].substring(0, 5);
+                        
+                        <div className="flex-1 p-2 space-y-2 overflow-y-auto bg-white/50 custom-scrollbar">
+                          {dayReservations.length === 0 ? (
+                            <div className="h-full flex items-center justify-center">
+                              <p className="text-[10px] text-slate-200 font-medium whitespace-nowrap overflow-hidden">Libre</p>
+                            </div>
+                          ) : (
+                            dayReservations.map(res => {
+                              const isNow = new Date() >= new Date(res.startTime) && new Date() <= new Date(res.endTime);
+                              const formatTime = (iso: string) => iso.split('T')[1].substring(0, 5);
 
-                          return (
-                            <motion.div 
-                              key={res.id}
-                              initial={{ opacity: 0, y: 5 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              className={`p-2 rounded-lg text-[10px] border-l-4 shadow-sm group relative ${
-                                isNow 
-                                  ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-200' 
-                                  : 'bg-blue-50 border-blue-500 hover:bg-blue-100 transition-colors'
-                              }`}
-                            >
-                              <p className="font-bold text-slate-800 truncate mb-0.5 uppercase">{res.subject}</p>
-                              <div className="flex items-center gap-1 text-blue-600 font-bold opacity-80 mb-1">
-                                <Clock size={10} />
-                                {formatTime(res.startTime)} - {formatTime(res.endTime)}
-                              </div>
-                              <p className="text-slate-500 italic truncate">Par {res.organizerName}</p>
-                              
-                              {user?.uid === res.organizerId && (
-                                <button 
-                                  onClick={() => handleDeleteReservation(res.id)}
-                                  className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-1 text-red-400 hover:text-red-600 transition-all bg-white rounded-full shadow-sm"
+                              return (
+                                <motion.div 
+                                  key={res.id}
+                                  initial={{ opacity: 0, y: 5 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className={`p-2 rounded-lg text-[10px] border-l-4 shadow-sm group relative ${
+                                    isNow 
+                                      ? 'bg-orange-50 border-orange-500 ring-2 ring-orange-200' 
+                                      : 'bg-blue-50 border-blue-500 hover:bg-blue-100 transition-colors'
+                                  }`}
                                 >
-                                  <Trash2 size={10} />
-                                </button>
-                              )}
-                            </motion.div>
-                          );
-                        })
-                      )}
+                                  <p className="font-bold text-slate-800 truncate mb-0.5 uppercase">{res.subject}</p>
+                                  <div className="flex items-center gap-1 text-blue-600 font-bold opacity-80 mb-1">
+                                    <Clock size={10} />
+                                    {formatTime(res.startTime)} - {formatTime(res.endTime)}
+                                  </div>
+                                  <p className="text-slate-500 italic truncate">Par {res.organizerName}</p>
+                                  
+                                  {user?.uid === res.organizerId || user?.email === "thales.market@gmail.com" ? (
+                                    <button 
+                                      onClick={() => handleDeleteReservation(res.id)}
+                                      className="absolute top-1 right-1 opacity-100 p-1 text-red-400 hover:text-red-500 transition-all bg-white rounded-full shadow-md z-10"
+                                    >
+                                      <Trash2 size={12} strokeWidth={2.5} />
+                                    </button>
+                                  ) : null}
+                                </motion.div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* Side Info Panel */}
+              <section className="col-span-3 flex flex-col gap-6 overflow-hidden">
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col overflow-hidden">
+                  <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <Info size={18} className="text-blue-600" />
+                    Détails de la Salle
+                  </h3>
+                  
+                  <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">
+                    <div className="bg-slate-50 rounded-lg p-4 border border-slate-100">
+                      <h4 className="font-black text-[#001D40] text-lg mb-1 leading-tight">{rooms[0]?.name}</h4>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-3">Salle de Prestige</p>
+                      
+                      <div className="grid grid-cols-2 gap-3 mb-4">
+                          <div className="bg-white p-2 rounded border border-slate-100">
+                            <p className="text-[8px] text-slate-400 font-bold uppercase">Capacité</p>
+                            <p className="text-sm font-black text-blue-600">{rooms[0]?.capacity} Pers.</p>
+                          </div>
+                          <div className="bg-white p-2 rounded border border-slate-100">
+                            <p className="text-[8px] text-slate-400 font-bold uppercase">Statut</p>
+                            <p className="text-sm font-black text-green-600">Ouvert</p>
+                          </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                          <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Équipements :</p>
+                          <div className="flex flex-wrap gap-1">
+                            {rooms[0]?.equipment.map((eq, i) => (
+                              <span key={i} className="text-[9px] bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-medium shadow-sm">
+                                {eq}
+                              </span>
+                            ))}
+                          </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-center border-dashed">
+                      <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 mx-auto">
+                        <Clock className="text-orange-500" size={20} />
+                      </div>
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-tighter">Vérification Cloud</h4>
+                      <p className="text-[9px] text-slate-500 mt-2 px-2 leading-relaxed">
+                        Les créneaux sont limités à 2h par défaut pour assurer la disponibilité à tous les collaborateurs.
+                      </p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* Side Info Panel */}
-          <section className="col-span-3 flex flex-col gap-6 overflow-hidden">
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col overflow-hidden">
-              <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
-                <Info size={18} className="text-blue-600" />
-                Détails de la Salle
-              </h3>
-              
-              <div className="flex-1 overflow-y-auto pr-1 space-y-4 custom-scrollbar">
-                <div className="bg-slate-50 rounded-lg p-4 border border-slate-100">
-                   <h4 className="font-black text-[#001D40] text-lg mb-1 leading-tight">{rooms[0]?.name}</h4>
-                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-3">Salle de Prestige</p>
-                   
-                   <div className="grid grid-cols-2 gap-3 mb-4">
-                      <div className="bg-white p-2 rounded border border-slate-100">
-                         <p className="text-[8px] text-slate-400 font-bold uppercase">Capacité</p>
-                         <p className="text-sm font-black text-blue-600">{rooms[0]?.capacity} Pers.</p>
-                      </div>
-                      <div className="bg-white p-2 rounded border border-slate-100">
-                         <p className="text-[8px] text-slate-400 font-bold uppercase">Statut</p>
-                         <p className="text-sm font-black text-green-600">Ouvert</p>
-                      </div>
-                   </div>
-
-                   <div className="space-y-1.5">
-                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">Équipements :</p>
-                      <div className="flex flex-wrap gap-1">
-                        {rooms[0]?.equipment.map((eq, i) => (
-                          <span key={i} className="text-[9px] bg-white text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-medium shadow-sm">
-                            {eq}
-                          </span>
-                        ))}
-                      </div>
-                   </div>
                 </div>
-
-                <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-center border-dashed">
-                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm mb-3 mx-auto">
-                    <Clock className="text-orange-500" size={20} />
+                
+                <div className="bg-[#001D40] rounded-xl p-5 text-white shadow-xl shadow-blue-900/20">
+                  <h4 className="text-xs font-bold uppercase tracking-widest opacity-50 mb-3">Support IT Thalès</h4>
+                  <p className="text-[11px] leading-relaxed mb-4">Besoin d'aide avec les équipements de la salle ? Contactez l'extension 2404.</p>
+                  <div className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                      <span className="text-[10px] font-bold uppercase">Ligne directe disponible</span>
                   </div>
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-tighter">Vérification Cloud</h4>
-                  <p className="text-[9px] text-slate-500 mt-2 px-2 leading-relaxed">
-                    Les créneaux sont limités à 2h par défaut pour assurer la disponibilité à tous les collaborateurs.
-                  </p>
                 </div>
-              </div>
+              </section>
             </div>
-            
-            <div className="bg-[#001D40] rounded-xl p-5 text-white shadow-xl shadow-blue-900/20">
-               <h4 className="text-xs font-bold uppercase tracking-widest opacity-50 mb-3">Support IT Thalès</h4>
-               <p className="text-[11px] leading-relaxed mb-4">Besoin d'aide avec les équipements de la salle ? Contactez l'extension 2404.</p>
-               <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-                  <span className="text-[10px] font-bold uppercase">Ligne directe disponible</span>
-               </div>
-            </div>
-          </section>
-        </div>
+          </>
+        )}
       </main>
 
       <ReservationModal 

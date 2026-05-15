@@ -19,6 +19,22 @@ export interface Reservation {
   updatedAt: string;
 }
 
+export interface Employee {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  department?: string;
+}
+
+export interface Employee {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  department?: string;
+}
+
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',

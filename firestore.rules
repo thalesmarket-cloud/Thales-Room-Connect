@@ -12,7 +12,7 @@ service cloud.firestore {
     }
 
     function isVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
+      return isSignedIn();
     }
 
     function isOwner(userId) {
@@ -31,6 +31,10 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isAdmin() {
+      return isSignedIn() && (request.auth.token.email == "thales.market@gmail.com");
+    }
+
     // --- ENTITY VALIDATIONS ---
 
     function isValidRoom(data) {
@@ -38,6 +42,13 @@ service cloud.firestore {
              data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
              (!('capacity' in data) || data.capacity is int) &&
              (!('equipment' in data) || data.equipment is list);
+    }
+
+    function isValidEmployee(data) {
+      return data.keys().hasAll(['firstName', 'lastName', 'email']) &&
+             data.firstName is string && data.firstName.size() > 0 &&
+             data.lastName is string && data.lastName.size() > 0 &&
+             data.email is string && data.email.size() > 0;
     }
 
     function isValidReservation(data) {
@@ -63,6 +74,11 @@ service cloud.firestore {
       allow update, delete: if false; // Rooms are static for now
     }
 
+    match /employees/{employeeId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidEmployee(incoming());
+    }
+
     match /reservations/{reservationId} {
       // List rules: enforce query security
       allow list: if isSignedIn(); // Can be refined to only show upcoming or specific rooms
@@ -73,14 +89,14 @@ service cloud.firestore {
                     exists(/databases/$(database)/documents/rooms/$(incoming().roomId));
 
       allow update: if isVerified() &&
-                    isOwner(existing().organizerId) &&
+                    (isOwner(existing().organizerId) || isAdmin()) &&
                     isValidReservation(incoming()) &&
                     incoming().organizerId == existing().organizerId &&
                     incoming().roomId == existing().roomId &&
                     // Action based update: can change subject, time, participants
                     incoming().diff(existing()).affectedKeys().hasOnly(['subject', 'startTime', 'endTime', 'participants', 'updatedAt']);
 
-      allow delete: if isVerified() && isOwner(existing().organizerId);
+      allow delete: if isVerified() && (isOwner(existing().organizerId) || isAdmin());
     }
   }
 }

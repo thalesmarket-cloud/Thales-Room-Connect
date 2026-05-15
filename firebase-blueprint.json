@@ -30,6 +30,19 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["roomId", "subject", "startTime", "endTime", "organizerId", "organizerName"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "A company employee who can be invited to meetings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string" },
+        "department": { "type": "string" }
+      },
+      "required": ["firstName", "lastName", "email"]
     }
   },
   "firestore": {
@@ -40,6 +53,10 @@
     "reservations": {
       "schema": "Reservation",
       "description": "All room reservations"
+    },
+    "employees": {
+      "schema": "Employee",
+      "description": "Directory of company employees"
     }
   }
 }
